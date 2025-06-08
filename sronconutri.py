@@ -764,16 +764,13 @@ class TabelaAlimentos:
                 "TOFU DEFUMADO"    # “Tofu defumado”
             ],
             "Leguminosas": [
-                "FEIJÃO", "LENTILHA", "GRÃO-DE-BICO", "VAGEM", "ERVILHA", "SOJA"
-                # Se surgir “Tremoço” ou outra leguminosa, incluir aqui
+                "FEIJÃO", "LENTILHA", "GRÃO-DE-BICO", "VAGEM", "ERVILHA", "SOJA","NOZES", "CASTANHA","AMENDOIM","AMÊNDOAS",
             ],
             "Óleos e Gorduras": [
-                # Mantém apenas as gorduras consumidas isoladamente ou em “prato principal”,
-                # mas NÃO aqueles puramente usados para temperar:
-                "MANTEIGA", "MARGARINA", "NOZES", "CASTANHA", "AMÊNDOAS",
-                "SEMENTE DE GIRASSOL", "SEMENTE DE LINHAÇA", "SEMENTE DE ABÓBORA",
-                "AMENDOIM"
-                # Note que “ÓLEO”, “AZEITE”, “ÓLEO DE COCO”, “BANHA” saíram daqui!
+
+              "SEMENTE DE GIRASSOL", "SEMENTE DE LINHAÇA", "SEMENTE DE ABÓBORA",
+
+
             ],
             "Açúcares e Doces": [
                 "AÇÚCAR", "MEL", "DOCE", "CHOCOLATE", "SORVETE", "BOMBOM", "BALAS",
@@ -804,7 +801,8 @@ class TabelaAlimentos:
                 "CREME DE LEITE", "CREME DE CEBOLA", "PIMENTA VERMELHA EM PÓ",
                 "ALHO EM PÓ", "TEMPERO VERDE", "COENTRO EM PÓ",
                 "MOLHO DE IOGURTE PARA SALADA",
-                "CREME VEGETAL", "MARGARINA", "MANTEIGA","TRIGO","TRIGO PARA QUIBE"
+                "CREME VEGETAL", "MARGARINA", "MANTEIGA","TRIGO","TRIGO PARA QUIBE",
+                "ALHO", "ALHO-PORÓ"
                 # … qualquer outra “erva/expeciaria” ou “molho pronto” do TBCA …
             ]
         }
@@ -1676,7 +1674,7 @@ def verificarIncompatibilidades(alimentos_possiveis):
         'bebida', 'café','apresuntado', 'canela','orégano','alecrim','cravo','coquetel','salame'
         'molusco','salsichão','papa','salaminho','FRUTOS DO MAR','LAGOSTA','CAMARÃO','MEXILHÃO','MARISCO'
         'SALMÃO','TENDER','PEPPERONI','MOQUECA','ACARAJÉ','MEXILHÃO','LULA','POLVO','PEITO DE PERU',
-        'BATIDA', 'ÁLCOOL','HUMANO','MILK SHAKE'
+        'BATIDA', 'ÁLCOOL','HUMANO','MILK SHAKE','SUCO','SUCO NATURAL', 'SUCO DE','REFRIGERANTE'
     ]
 
     # Converte todas as palavras-chave para uppercase
@@ -1994,11 +1992,13 @@ def preprocessamento(df: pd.DataFrame) -> pd.DataFrame:
     # 3) PREPARA as chaves normalizadas para comparação
     chave_temperos = _normaliza_texto("Temperos_complementos")  # → "TEMPEROS COMPLEMENTOS"
     chave_bebidas  = _normaliza_texto("Bebidas")                # → "BEBIDAS"
+    chave_oleos    = _normaliza_texto("Óleos e Gorduras")
 
     # 4) FILTRA: remove linhas cujo tipo seja "TEMPEROS COMPLEMENTOS" ou "BEBIDAS"
     df_filtrado = df[
         (df['TIPO_NORM'] != chave_temperos) &
         (df['TIPO_NORM'] != chave_bebidas)
+        & (df['TIPO_NORM'] != chave_oleos)
     ].copy()
 
     # descarta a coluna auxiliar
@@ -2658,6 +2658,12 @@ print(latex_medias)
 print("\nTabela LaTeX da Frequência e Quantidades dos Alimentos:")
 print(latex_alimentos)
 
+df_bruto   = pa.gerar_dataframe_alimentos(colunas_relevantes, colunas_numericas)
+df_topsis  = preprocessamento(df_bruto)
+
+print("TIPOS originais:", df_bruto['TIPO'].unique())
+print("TIPOS após filtro:", df_topsis['TIPO'].unique())
+
 def calcular_medias_por_paciente(dietas_por_paciente, dias=5):
     """
     Calcula as médias diárias dos macronutrientes para cada paciente.
@@ -2738,8 +2744,23 @@ for pa in lista_pacientes_alimento:
         f.write(tabela_dieta)
         f.write("\n")
 
-from google.colab import drive
-drive.mount('/content/drive')
+# 1) Agrupa e calcula duas métricas: soma de Quantidade e contagem de linhas
+df_alimentos_agregado = (
+    df_resultados
+      .groupby('Alimento')
+      .agg(
+          Quantidade = ('Quantidade', 'sum'),
+          Ocorrências = ('Quantidade', 'count')
+      )
+      .reset_index()
+)
+
+# 2) Veja as colunas
+print(df_alimentos_agregado.columns)
+# Index(['Alimento', 'Quantidade', 'Ocorrências'], dtype='object')
+
+# 3) Exiba as duas colunas lado a lado
+print(df_alimentos_agregado[['Alimento','Quantidade','Ocorrências']])
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -2760,36 +2781,102 @@ def plot_boxplots_medias(df, ylim=None):
     df_filtrado = df[df['Paciente'] != 'Média Geral']
     plt.figure(figsize=(10, 6))
     df_filtrado[nutrientes].boxplot()
-    plt.title("Distribuição das Médias Nutricionais por Paciente")
+    plt.title("Distribuição das Medianas Nutricionais por Paciente")
     plt.ylabel("Valor (g)")
     if ylim:
         plt.ylim(*ylim)
     plt.tight_layout()
     plt.show()
 
-def plot_scatter_medias(df, nutrient, ylim=None):
+def plot_scatter_medias(df, nutrient, angulo,ylim=None, max_ticks=30):
+
+    # filtra sem a 'Média Geral'
     df_filtrado = df[df['Paciente'] != 'Média Geral']
-    x = range(len(df_filtrado))
-    plt.figure(figsize=(12, 6))
-    plt.scatter(x, df_filtrado[nutrient], alpha=0.7)
-    plt.xticks(x, rotation=0, ha='right')
-    plt.title(f"{nutrient} por Paciente")
-    plt.xlabel("Paciente")
-    plt.ylabel(nutrient)
+
+    # posições numéricas
+    x = list(range(len(df_filtrado)))
+
+    # plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(x, df_filtrado[nutrient], alpha=0.7)
+
+    # calcula passo para não ultrapassar max_ticks
+    step = max(1, len(x) // max_ticks)
+    ticks = x[::step]
+    labels = [str(i+1) for i in ticks]
+
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(labels, rotation=angulo, ha='right', fontsize=8)
+
+    ax.set_title(f"{nutrient} por Paciente")
+    ax.set_xlabel("Paciente")
+    ax.set_ylabel(nutrient)
+
     if ylim:
-        plt.ylim(*ylim)
+        ax.set_ylim(*ylim)
+
+    # linha da Média Geral
     mg = df.loc[df['Paciente']=='Média Geral', nutrient]
     if not mg.empty:
-        plt.axhline(mg.values[0], linestyle='--', color='red', label="Média Geral")
-        plt.legend()
-    plt.tight_layout()
+        ax.axhline(mg.values[0], linestyle='--', color='red', label="Média Geral")
+        ax.legend()
+
+    plt.subplots_adjust(bottom=0.3)
+    plt.show()
+
+def plot_scatter_medias_com_nomes(df, nutrient, ylim=None, max_ticks=30):
+
+    # 1) Filtra e ordena (remove 'Média Geral' e ordena pelo nutriente)
+    df_filtrado = (
+        df[df['Paciente'] != 'Média Geral']
+        #.sort_values(by=nutrient)
+        .reset_index(drop=True)
+    )
+
+    # 2) Cria posições e nomes
+    x = list(range(len(df_filtrado)))
+    nomes = df_filtrado['Paciente'].tolist()
+
+    # 3) Plota
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(x, df_filtrado[nutrient], alpha=0.7)
+
+    # 4) Define quais ticks exibir (evita entulhar)
+    step = max(1, len(x) // max_ticks)
+    ticks = x[::step]
+    labels = nomes[::step]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+
+    # 5) Título e eixos
+    ax.set_title(f"{nutrient} por Paciente")
+    ax.set_xlabel("Paciente")
+    ax.set_ylabel(nutrient)
+
+    # 6) Limites do eixo y (opcional)
+    if ylim:
+        ax.set_ylim(*ylim)
+
+    # 7) Linha da 'Média Geral'
+    mg = df.loc[df['Paciente']=='Média Geral', nutrient]
+    if not mg.empty:
+        ax.axhline(
+            y=mg.values[0],
+            linestyle='--',
+            color='red',
+            label="Média Geral"
+        )
+        ax.legend()
+
+    # 8) Ajusta layout para caber os rótulos
+    plt.subplots_adjust(bottom=0.3)
     plt.show()
 
 def plot_bar_medias(df, nutrient, top_n=10, ylim=None):
     df_filtrado = df[df['Paciente']!='Média Geral'].head(top_n)
     plt.figure(figsize=(10, 6))
     plt.bar(df_filtrado['Paciente'], df_filtrado[nutrient])
-    plt.xticks(rotation=45, ha='right')
+    plt.xticks(rotation=45, ha='right',fontsize=8)
     plt.title(f"{nutrient} — {top_n} Pacientes")
     plt.xlabel("Paciente")
     plt.ylabel(nutrient)
@@ -2798,49 +2885,73 @@ def plot_bar_medias(df, nutrient, top_n=10, ylim=None):
     plt.tight_layout()
     plt.show()
 
-def plot_top10_alimentos(df_alimentos_agregado, top_n=10):
-    """
-    Plota um gráfico de barras com os top_n alimentos por ocorrência.
+import matplotlib.pyplot as plt
+from textwrap import shorten
 
-    Parâmetros:
-        df_alimentos_agregado (pd.DataFrame): DataFrame que contém ao menos duas colunas:
-            - a primeira coluna é o nome do alimento
-            - uma coluna numérica de frequência, chamada 'Quantidade', 'Frequencia' ou 'Ocorrencias'
-        top_n (int): quantos itens exibir (padrão: 10).
+def plot_top10_alimentos(
+    df_alimentos_agregado,
+    top_n=10,
+    freq_col=None,
+    max_words=3
+):
     """
-    # Determina qual coluna representa a frequência
-    if 'Quantidade' in df_alimentos_agregado.columns:
-        coluna_freq = 'Quantidade'
-    elif 'Frequencia' in df_alimentos_agregado.columns:
-        coluna_freq = 'Frequencia'
-    elif 'Ocorrencias' in df_alimentos_agregado.columns:
-        coluna_freq = 'Ocorrencias'
+    Plota um bar chart dos top_n alimentos, mas encurtando cada label
+    para as primeiras max_words palavras, sem '...'.
+    """
+    cols = df_alimentos_agregado.columns.tolist()
+
+    # Detecta a coluna de frequência
+    if freq_col and freq_col in cols:
+        coluna_freq = freq_col
     else:
-        raise KeyError(
-            "O DataFrame df_alimentos_agregado deve conter 'Quantidade', 'Frequencia' "
-            "ou 'Ocorrencias' como coluna de ocorrência."
-        )
+        for nome in ('Quantidade', 'Frequencia', 'Ocorrencias'):
+            if nome in cols:
+                coluna_freq = nome
+                break
+        else:
+            numeric = df_alimentos_agregado.select_dtypes(include='number').columns
+            if numeric.any():
+                coluna_freq = numeric[0]
+            else:
+                raise KeyError(f"Nenhuma coluna numérica encontrada em {cols}")
 
-    # Determina qual é a coluna de alimentos (assume-se que seja a primeira)
-    food_col = df_alimentos_agregado.columns[0]
+    food_col = cols[0]
+    df_sorted = (
+        df_alimentos_agregado
+        .sort_values(by=coluna_freq, ascending=False)
+        .head(top_n)
+    )
 
-    # Ordena em ordem decrescente e seleciona top_n
-    df_sorted = df_alimentos_agregado.sort_values(by=coluna_freq, ascending=False).head(top_n)
+    # Cria labels só com as primeiras max_words palavras
+    labels = []
+    for full in df_sorted[food_col]:
+        words = full.split()
+        short = " ".join(words[:max_words])
+        labels.append(short)
+
+    values = df_sorted[coluna_freq]
 
     plt.figure(figsize=(10, 6))
-    plt.bar(df_sorted[food_col], df_sorted[coluna_freq])
-    plt.xticks(rotation=45, ha='right')
-    plt.title(f"Top {top_n} Alimentos por Ocorrência")
+    plt.bar(labels, values)
+    plt.xticks(rotation=45, ha='right', fontsize=8)
+    plt.title(f"Top {top_n} Alimentos por {coluna_freq}")
     plt.xlabel("Alimento")
-    plt.ylabel("Ocorrência")
+    plt.ylabel(coluna_freq)
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.subplots_adjust(bottom=0.3)
     plt.tight_layout()
     plt.show()
+
 
 plot_boxplots_medias(df_medias_gerais, ylim=(y_min, y_max))
 
 for nutr in nutrientes:
-    plot_scatter_medias(df_medias_gerais, nutr, ylim=(y_min, y_max))
-    plot_bar_medias(df_medias_gerais, nutr, top_n=10, ylim=(y_min, y_max))
+    angulo = 0
+    plot_scatter_medias(df_medias_gerais, nutr,angulo, ylim=(y_min, y_max))
+    angulo = 45
+    plot_scatter_medias(df_medias_gerais, nutr, angulo,ylim=(y_min, y_max))
+    #plot_bar_medias(df_medias_gerais, nutr, top_n=10, ylim=(y_min, y_max))
+    plot_scatter_medias_com_nomes(df_medias_gerais, nutr, ylim=(y_min, y_max))
 
 plot_top10_alimentos(df_alimentos_agregado, top_n=10)
 
@@ -2849,8 +2960,61 @@ import matplotlib.pyplot as plt
 # Filtra a média geral
 df = df_medias_gerais[df_medias_gerais['Paciente'] != 'Média Geral']
 
-# Índices 0,1,2… e nomes originais (só pra referência interna)
+# Índices internos e nomes
 x = list(range(len(df)))
+nomes = df['Paciente'].tolist()
+
+# Valores de cada macro
+proteinas    = df['Média Proteína (g)']
+carboidratos = df['Média Carboidrato (g)']
+lipidios     = df['Média Lipídios (g)']
+
+# Limites comuns
+y_min = min(proteinas.min(), carboidratos.min(), lipidios.min())
+y_max = max(proteinas.max(), carboidratos.max(), lipidios.max())
+
+# Quantos ticks no máximo queremos exibir
+max_ticks = 30
+step = max(1, len(x) // max_ticks)
+ticks = x[::step]
+labels = [i+1 for i in x][::step]  # ou use nomes[::step] para rótulos com nomes
+
+plt.figure(figsize=(14, 7))
+plt.plot(x, proteinas,    marker='o', label='Proteína (g)')
+plt.plot(x, carboidratos, marker='s', label='Carboidrato (g)')
+plt.plot(x, lipidios,     marker='^', label='Lipídios (g)')
+
+# Aplica apenas os ticks selecionados, rotacionados e alinhados
+plt.xticks(
+    ticks,
+    labels,
+    rotation=45,
+    ha='right',
+    fontsize=8
+)
+
+plt.xlabel('Paciente (número)')
+plt.ylabel('Média (g)')
+plt.ylim(y_min, y_max)
+plt.title('Comparação das Médias de Macronutrientes por Paciente')
+plt.legend(title='Macronutrientes')
+plt.grid(axis='y', linestyle='--', alpha=0.5)
+
+# Abre espaço embaixo para os labels não serem cortados
+plt.subplots_adjust(bottom=0.3)
+plt.tight_layout()
+plt.show()
+
+import matplotlib.pyplot as plt
+
+# Filtra a média geral
+df = df_medias_gerais[df_medias_gerais['Paciente'] != 'Média Geral']
+
+# Índices numéricos internos
+x = list(range(len(df)))
+# nomes para exibir
+nomes = df['Paciente'].tolist()
+
 # valores de cada macro
 proteinas    = df['Média Proteína (g)']
 carboidratos = df['Média Carboidrato (g)']
@@ -2865,14 +3029,22 @@ plt.plot(x, proteinas,    marker='o', label='Proteína (g)')
 plt.plot(x, carboidratos, marker='s', label='Carboidrato (g)')
 plt.plot(x, lipidios,     marker='^', label='Lipídios (g)')
 
-# agora os ticks são 1,2,3… em vez do nome
-plt.xticks(x, [i+1 for i in x], rotation=0, ha='right')
-plt.xlabel('Paciente (número)')
+# agora usa os nomes dos pacientes em vez de números
+plt.xticks(
+    ticks=x,
+    labels=nomes,
+    rotation=45,
+    ha='right',
+    fontsize=8
+)
+
+plt.xlabel('Paciente')
 plt.ylabel('Média (g)')
 plt.ylim(y_min, y_max)
 plt.title('Comparação das Médias de Macronutrientes por Paciente')
 plt.legend(title='Macronutrientes')
 plt.grid(axis='y', linestyle='--', alpha=0.5)
+plt.subplots_adjust(bottom=0.3)  # abre espaço para os rótulos
 plt.tight_layout()
 plt.show()
 
@@ -3680,7 +3852,7 @@ def plot_boxplots_medias(df):
 
     plt.figure(figsize=(10, 6))
     df_filtrado[nutrients].boxplot()
-    plt.title("Distribuição das Médias Nutricionais por Paciente")
+    plt.title("Distribuição das Medianas Nutricionais por Paciente")
     plt.ylabel("Valor")
     plt.tight_layout()
     plt.show()
@@ -3702,7 +3874,7 @@ def plot_scatter_medias(df, nutrient):
     plt.title(f"{nutrient} por Paciente (Indexados)")
     plt.xlabel("Paciente (Número)")
     plt.ylabel(nutrient)
-
+    plt.xticks(rotation=45, ha='right',fontsize=8)
     # Adiciona linha com o valor da 'Média Geral' (se existir)
     media_geral = df[df['Paciente'] == 'Média Geral'][nutrient]
     if not media_geral.empty:
@@ -3726,6 +3898,7 @@ def plot_top_n_medias(df, nutrient, top_n=10):
     # Utiliza a coluna 'Paciente' para os rótulos no eixo y e o valor do nutriente para as barras
     plt.barh(df_sorted['Paciente'], df_sorted[nutrient], color='lightgreen')
     plt.xlabel(nutrient)
+    plt.xticks(rotation=45, ha='right')
     plt.title(f"Top {len(df_sorted)} Pacientes - {nutrient}")
     plt.gca().invert_yaxis()  # Maior valor no topo
     plt.tight_layout()
@@ -3749,7 +3922,7 @@ def plot_ocorrencias_alimentos(df_alimentos_agregado, top_n=10):
     plt.tight_layout()
     plt.show()
 
-
+'''
 # Exemplo de uso:
 # Suponha que 'df_medias_gerais' seja o DataFrame com as médias nutricionais por paciente,
 # incluindo uma linha 'Média Geral' para os dados agregados,
@@ -3772,6 +3945,7 @@ plot_top_n_medias(df_medias_gerais, 'Média Proteína (g)', top_n=10)
 
 # Plotar ocorrências de alimentos
 plot_ocorrencias_alimentos(df_alimentos_agregado, top_n=10)
+'''
 
 import pandas as pd
 
@@ -3891,7 +4065,7 @@ df_resultados = coletar_resultados_dietas_nsga_2(dietas_por_paciente)
 # (Opcional) Verifique se realmente há várias linhas e alimentos distintos
 print("Total de linhas em df_resultados:", len(df_resultados))
 print("Alimentos únicos em df_resultados:", df_resultados['Alimento'].nunique())
-print(df_resultados[['Alimento', 'Quantidade']].head(10))
+print(df_resultados[['Alimento', 'Quantidade']].head())
 
 
 # 2) Agrupe por 'Alimento' somando quantas porções apareceram
@@ -3909,16 +4083,58 @@ df_alimentos_agregado = (
       .sort_values(by='Ocorrências', ascending=False)
       .reset_index(drop=True)
 )
-
-# (Opcional) Veja o top 10 antes de plotar
+print()
 print("Top 10 alimentos agregados:")
 print(df_alimentos_agregado.head(10))
 
 import matplotlib.pyplot as plt
 import pandas as pd
-
+angulo = 0;
 # 1) Defina apenas as colunas de macros que quer equalizar
 nutrientes = ['Média Proteína (g)', 'Média Carboidrato (g)', 'Média Lipídios (g)']
+
+def plot_scatter_medias_com_nomes(df, nutrient, max_ticks=100):
+    """
+    Gera um scatter plot da média de um nutriente específico,
+    exibindo os nomes dos pacientes no eixo x (rotacionados a 45°).
+
+    Parâmetros:
+    - df: DataFrame com as colunas 'Paciente' e o nutriente.
+    - nutrient: string com o nome da coluna do nutriente.
+    - max_ticks: número máximo de rótulos a mostrar (para evitar sobreposição).
+    """
+    # Filtra e ordena
+    df_filtrado = df[df['Paciente'] != 'Média Geral'].reset_index(drop=True)
+    n = len(df_filtrado)
+    x = list(range(n))
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(x, df_filtrado[nutrient], alpha=0.7)
+
+    # Decide quais ticks exibir para não ultrapassar max_ticks
+    step = max(1, n // max_ticks)
+    ticks = x[::step]
+    labels = nomes[::step]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+
+    # Linha da média geral (se existir)
+    media_geral = df.loc[df['Paciente']=='Média Geral', nutrient]
+    if not media_geral.empty:
+        ax.axhline(
+            y=media_geral.values[0],
+            color='red',
+            linestyle='--',
+            label='Média Geral'
+        )
+        ax.legend()
+
+    # Ajustes finais
+    plt.subplots_adjust(bottom=0.3)
+    ax.set_title(f"{nutrient} por Paciente")
+    ax.set_xlabel("Paciente (número)")
+    ax.set_ylabel(nutrient)
+    plt.show()
 
 # 2) Função para calcular um y_min e y_max comuns entre esses macros
 def compute_common_ylim(df, columns=nutrientes):
@@ -3933,28 +4149,54 @@ def plot_boxplots_medias(df, ylim=None):
     df_filtrado = df[df['Paciente'] != 'Média Geral']
     plt.figure(figsize=(10, 6))
     df_filtrado[nutrientes].boxplot()
-    plt.title("Distribuição das Médias Nutricionais por Paciente")
+    plt.title("Distribuição das Medianas Nutricionais por Paciente")
     plt.ylabel("Valor (g)")
     if ylim:
         plt.ylim(*ylim)
     plt.tight_layout()
     plt.show()
 
-def plot_scatter_medias(df, nutrient, ylim=None):
-    df_filtrado = df[df['Paciente'] != 'Média Geral']
-    x = range(len(df_filtrado))
-    plt.figure(figsize=(12, 6))
-    plt.scatter(x, df_filtrado[nutrient], alpha=0.7)
-    plt.xticks(x, rotation=0, ha='right')
-    plt.title(f"{nutrient} por Paciente")
-    plt.xlabel("Paciente")
-    plt.ylabel(nutrient)
+def plot_scatter_medias(df, nutrient, angulo,ylim=None, max_ticks=30):
+
+    # 1) Filtra sem a 'Média Geral'
+    df_filtrado = df[df['Paciente'] != 'Média Geral'].reset_index(drop=True)
+    n = len(df_filtrado)
+    x = list(range(n))
+
+    # 2) Plota pontos
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(x, df_filtrado[nutrient], alpha=0.7)
+
+    # 3) Calcula quais ticks exibir
+    step = max(1, n // max_ticks)
+    ticks = x[::step]
+    labels = [i+1 for i in ticks]  # gera 1,2,3,…
+
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(labels, rotation=angulo, ha='right', fontsize=8)
+
+    # 4) Títulos e eixos
+    ax.set_title(f"{nutrient} por Paciente")
+    ax.set_xlabel("Paciente (número)")
+    ax.set_ylabel(nutrient)
+
+    # 5) Aplica ylim se passado
     if ylim:
-        plt.ylim(*ylim)
-    mg = df.loc[df['Paciente']=='Média Geral', nutrient]
+        ax.set_ylim(*ylim)
+
+    # 6) Linha da Média Geral
+    mg = df.loc[df['Paciente']=="Média Geral", nutrient]
     if not mg.empty:
-        plt.axhline(mg.values[0], linestyle='--', color='red', label="Média Geral")
-        plt.legend()
+        ax.axhline(
+            y=mg.values[0],
+            linestyle='--',
+            color='red',
+            label="Média Geral"
+        )
+        ax.legend()
+
+    # 7) Ajusta layout
+    plt.subplots_adjust(bottom=0.3)
     plt.tight_layout()
     plt.show()
 
@@ -3962,7 +4204,7 @@ def plot_bar_medias(df, nutrient, top_n=10, ylim=None):
     df_filtrado = df[df['Paciente'] != 'Média Geral'].head(top_n)
     plt.figure(figsize=(12, 6))
     plt.bar(df_filtrado['Paciente'], df_filtrado[nutrient])
-    plt.xticks(rotation=0, ha='right')
+    plt.xticks(rotation=0, ha='right',fontsize=8)
     plt.title(f"{nutrient} — {top_n} Pacientes")
     plt.xlabel("Paciente")
     plt.ylabel(nutrient)
@@ -3972,17 +4214,11 @@ def plot_bar_medias(df, nutrient, top_n=10, ylim=None):
     plt.show()
 
 
-def plot_ocorrencias_alimentos(df_agregado, top_n=10):
-    """
-    Plota um gráfico de barras com os top_n alimentos por ocorrências,
-    mas encurta cada rótulo para duas palavras relevantes, pulando
-    “DE”, “EM”, “COM” etc. Caso a segunda palavra seja uma stopword,
-    substitui pela terceira, e assim por diante.
-    """
+def plot_ocorrencias_alimentos(df_agregado, angulo,top_n=10):
     if 'Alimento' not in df_agregado.columns or 'Ocorrências' not in df_agregado.columns:
         raise KeyError("O DataFrame precisa conter as colunas 'Alimento' e 'Ocorrências'.")
 
-    stopwords = {"DE", "EM", "COM"}  # se precisar adicionar mais, basta incluir aqui
+    stopwords = {"DE", "EM", "COM", "IN"}  # você pode adicionar mais aqui
 
     # Seleciona os top_n alimentos
     df_top = df_agregado.head(top_n)
@@ -3991,22 +4227,23 @@ def plot_ocorrencias_alimentos(df_agregado, top_n=10):
     nomes_encurtados = []
 
     for nome in nomes_completos:
+        # remove vírgula terminal, se houver
+        nome = nome.rstrip(',').strip()
         tokens = nome.split()
         selecionados = []
 
-        # varre os tokens e pega até 2 que não sejam stopwords
         for t in tokens:
-            if t.upper() in stopwords:
-                # pula essa palavra (como “DE”, “EM” ou “COM”)
+            # retira vírgulas de pontuação nos tokens
+            t_clean = t.strip(',').strip()
+            if t_clean.upper() in stopwords:
                 continue
-            selecionados.append(t)
+            selecionados.append(t_clean)
             if len(selecionados) == 2:
                 break
 
-        # se não conseguiu coletar 2 (poucas palavras), volta ao comportamento padrão:
+        # fallback: se não pegou 2 por causa de stopwords
         if len(selecionados) < 2:
-            # simplesmente pega as duas primeiras palavras originais, ignorando stopwords
-            selecionados = tokens[:2]
+            selecionados = [tok.strip(',') for tok in tokens[:2]]
 
         nomes_encurtados.append(" ".join(selecionados))
 
@@ -4021,7 +4258,7 @@ def plot_ocorrencias_alimentos(df_agregado, top_n=10):
     plt.xticks(
         ticks=range(len(nomes_encurtados)),
         labels=nomes_encurtados,
-        rotation=45,
+        rotation=angulo,
         ha='right'
     )
 
@@ -4039,44 +4276,70 @@ plot_boxplots_medias(df_medias_gerais, ylim=ylim)
 
 # Scatter e barras para cada macro com a mesma escala
 for nutr in nutrientes:
-    plot_scatter_medias(df_medias_gerais, nutr, ylim=ylim)
-    plot_bar_medias    (df_medias_gerais, nutr, top_n=10, ylim=ylim)
+    angulo = 0
+    plot_scatter_medias(df_medias_gerais, nutr,angulo, ylim=ylim)
+    angulo = 45
+    plot_scatter_medias(df_medias_gerais, nutr,angulo, ylim=ylim)
+    #plot_bar_medias    (df_medias_gerais, nutr, top_n=10, ylim=ylim)
+    plot_scatter_medias_com_nomes(df_medias_gerais, nutr, max_ticks=30)
 
+#plot_ocorrencias_alimentos(df_alimentos_agregado,angulo=0, top_n=10,)
+plot_ocorrencias_alimentos(df_alimentos_agregado, angulo=45,top_n=10)
 
-plot_ocorrencias_alimentos(df_alimentos_agregado, top_n=10)
+import matplotlib.pyplot as plt
 
+# Filtra a 'Média Geral'
 df = df_medias_gerais[df_medias_gerais['Paciente'] != 'Média Geral']
-pacientes = df['Paciente']
 
-# Valores para cada macro
+# Lista de posições numéricas
+x = list(range(len(df)))
+
+# Valores de cada macro
 proteinas    = df['Média Proteína (g)']
 carboidratos = df['Média Carboidrato (g)']
 lipidios     = df['Média Lipídios (g)']
 
-# Calcular ylim comum entre os três
+# Limites comuns do eixo y
 y_min = min(proteinas.min(), carboidratos.min(), lipidios.min())
 y_max = max(proteinas.max(), carboidratos.max(), lipidios.max())
 
-# Plot sobreposto
+# Define quantos ticks no máximo queremos exibir
+max_ticks = 30
+step = max(1, len(x) // max_ticks)
+ticks = x[::step]
+labels = [i+1 for i in ticks]  # converte para 1,2,3...
+
 plt.figure(figsize=(14, 7))
-plt.plot(pacientes, proteinas,    marker='o', label='Proteína (g)',    color='tab:blue')
-plt.plot(pacientes, carboidratos, marker='s', label='Carboidrato (g)', color='tab:orange')
-plt.plot(pacientes, lipidios,     marker='^', label='Lipídios (g)',    color='tab:green')
+plt.plot(x, proteinas,    marker='o', label='Proteína (g)',    color='tab:blue')
+plt.plot(x, carboidratos, marker='s', label='Carboidrato (g)', color='tab:orange')
+plt.plot(x, lipidios,     marker='^', label='Lipídios (g)',    color='tab:green')
 
+# Exibe apenas os números selecionados no eixo x
+plt.xticks(
+    ticks,
+    labels,
+    rotation=45,
+    ha='right',
+    fontsize=8
+)
 
-plt.xticks(x, [i+1 for i in x], rotation=0, ha='right')
 plt.ylim(y_min, y_max)
-plt.xlabel('Paciente')
+plt.xlabel('Paciente (número)')
 plt.ylabel('Média (g)')
 plt.title('Comparação das Médias de Macronutrientes por Paciente')
 plt.legend(title='Macronutrientes')
 plt.grid(axis='y', linestyle='--', alpha=0.5)
+
+# Abre espaço embaixo para os labels inclinados
+plt.subplots_adjust(bottom=0.3)
 plt.tight_layout()
 plt.show()
 
-# Defina os macros e paciência (supondo df_medias_gerais já disponível)
+import matplotlib.pyplot as plt
+
+# Supondo df_medias_gerais já disponível
 df = df_medias_gerais[df_medias_gerais['Paciente'] != 'Média Geral']
-pacientes = df['Paciente']
+pacientes = df['Paciente'].tolist()
 
 # Valores para cada macro
 proteinas    = df['Média Proteína (g)']
@@ -4087,13 +4350,24 @@ lipidios     = df['Média Lipídios (g)']
 y_min = min(proteinas.min(), carboidratos.min(), lipidios.min())
 y_max = max(proteinas.max(), carboidratos.max(), lipidios.max())
 
+# Cria índice numérico para posicionar os nomes no eixo x
+x = list(range(len(pacientes)))
+
 # Plot sobreposto
 plt.figure(figsize=(14, 7))
-plt.plot(pacientes, proteinas,    marker='o', label='Proteína (g)',    color='tab:blue')
-plt.plot(pacientes, carboidratos, marker='s', label='Carboidrato (g)', color='tab:orange')
-plt.plot(pacientes, lipidios,     marker='^', label='Lipídios (g)',    color='tab:green')
+plt.plot(x, proteinas,    marker='o', label='Proteína (g)',    color='tab:blue')
+plt.plot(x, carboidratos, marker='s', label='Carboidrato (g)', color='tab:orange')
+plt.plot(x, lipidios,     marker='^', label='Lipídios (g)',     color='tab:green')
 
-plt.xticks(x, [i+1 for i in x], rotation=0, ha='right')
+# Define os rótulos do eixo x como os nomes dos pacientes
+plt.xticks(
+    ticks=x,
+    labels=pacientes,
+    rotation=45,
+    ha='right',
+    fontsize=8
+)
+
 plt.ylim(y_min, y_max)
 plt.xlabel('Paciente')
 plt.ylabel('Média (g)')
